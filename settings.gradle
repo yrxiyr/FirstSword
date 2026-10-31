@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+        // maven.neoforged.net 在当前网络不可达，走 ForgeCDN 镜像
+        maven {
+            name = 'ForgeCDN NeoForged'
+            url = 'https://neoforged.forgecdn.net/releases/'
+        }
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'TheFirstMod'

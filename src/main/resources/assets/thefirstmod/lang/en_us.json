@@ -1,0 +1,8 @@
+{
+  "itemGroup.thefirstmod": "The FirstMod",
+  "item.thefirstmod.first_sword": "First Sword",
+  "tooltip.thefirstmod.first_sword.rainbow": "Right-click: summon rainbow lightning around you",
+  "tooltip.thefirstmod.first_sword.meteor": "Hold J: call down a meteor shower",
+  "key.thefirstmod.meteor": "Meteor Shower",
+  "key.categories.thefirstmod": "The FirstMod"
+}
