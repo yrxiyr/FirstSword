@@ -21,6 +21,7 @@ import net.minecraft.world.level.Level;
  *   <li>右键 —— 以自身为中心落三波彩虹雷（见 {@link RainbowLightning}）</li>
  *   <li>长按 J —— 蓄力后朝视线方向 ±60° 的扇面砸流星群（见 {@link RainbowMeteor}，
  *       按键处理在 {@code client.MeteorKeyHandler}）</li>
+ *   <li>按 K —— 朝准星方向瞬移并切开路径上的敌人（见 {@link BlinkStrike}）</li>
  * </ul>
  */
 public class FirstSwordItem extends SwordItem
@@ -64,6 +65,7 @@ public class FirstSwordItem extends SwordItem
     {
         tooltip.add(Component.translatable("tooltip.thefirstmod.first_sword.rainbow"));
         tooltip.add(Component.translatable("tooltip.thefirstmod.first_sword.meteor"));
+        tooltip.add(Component.translatable("tooltip.thefirstmod.first_sword.blink"));
         super.appendHoverText(stack, context, tooltip, flag);
     }
 }

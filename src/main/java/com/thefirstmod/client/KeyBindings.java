@@ -12,6 +12,12 @@ public final class KeyBindings
             InputConstants.KEY_J,
             "key.categories.thefirstmod");
 
+    /** 瞬闪斩，默认 K */
+    public static final KeyMapping BLINK = new KeyMapping(
+            "key.thefirstmod.blink",
+            InputConstants.KEY_K,
+            "key.categories.thefirstmod");
+
     private KeyBindings()
     {
     }

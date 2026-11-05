@@ -171,6 +171,23 @@ public class RainbowLightning extends Entity
         return PALETTE[random.nextInt(PALETTE.length)];
     }
 
+    /**
+     * 把颜色按比例向白色插值：0 = 原色，1 = 纯白。
+     * dust 粒子没有自发光通道，想让粒子看起来更亮只能把颜色本身往白里推。
+     */
+    public static int brighten(int rgb, float amount)
+    {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+
+        r += (int) ((255 - r) * amount);
+        g += (int) ((255 - g) * amount);
+        b += (int) ((255 - b) * amount);
+
+        return (r << 16) | (g << 8) | b;
+    }
+
     private static RainbowLightning create(ServerLevel level, RandomSource random, double x, double z)
     {
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(x), Mth.floor(z));

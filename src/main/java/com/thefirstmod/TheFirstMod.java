@@ -72,6 +72,36 @@ public class TheFirstMod
                     .updateInterval(1)
                     .build("rainbow_meteor"));
 
+    // 流星出生的空中法阵，纯视觉
+    public static final DeferredHolder<EntityType<?>, EntityType<MeteorPortal>> METEOR_PORTAL =
+            ENTITY_TYPES.register("meteor_portal", () -> EntityType.Builder
+                    .of(MeteorPortal::new, MobCategory.MISC)
+                    .noSave()
+                    .sized(0.0F, 0.0F)
+                    .clientTrackingRange(16)
+                    .updateInterval(20)
+                    .build("meteor_portal"));
+
+    // 瞬闪斩留下的斩痕，纯视觉
+    public static final DeferredHolder<EntityType<?>, EntityType<BlinkTrail>> BLINK_TRAIL =
+            ENTITY_TYPES.register("blink_trail", () -> EntityType.Builder
+                    .of(BlinkTrail::new, MobCategory.MISC)
+                    .noSave()
+                    .sized(0.0F, 0.0F)
+                    .clientTrackingRange(16)
+                    .updateInterval(20)
+                    .build("blink_trail"));
+
+    // 冲刺时留下的刀光，纯视觉
+    public static final DeferredHolder<EntityType<?>, EntityType<SlashArc>> SLASH_ARC =
+            ENTITY_TYPES.register("slash_arc", () -> EntityType.Builder
+                    .of(SlashArc::new, MobCategory.MISC)
+                    .noSave()
+                    .sized(0.0F, 0.0F)
+                    .clientTrackingRange(16)
+                    .updateInterval(20)
+                    .build("slash_arc"));
+
     // Creates a creative tab with the id "thefirstmod:first_tab", placed before the combat tab
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> FIRST_TAB = CREATIVE_MODE_TABS.register("first_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.thefirstmod")) //The language key for the title of your CreativeModeTab

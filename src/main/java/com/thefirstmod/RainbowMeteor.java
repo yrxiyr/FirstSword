@@ -58,8 +58,10 @@ public class RainbowMeteor extends Entity
     private static final double FALL_SPEED = 2.0D;
 
     // ---- 大流星 ----
-    private static final float BIG_DAMAGE = 64.0F;
-    private static final double BIG_DAMAGE_RADIUS = 9.0D;
+    /** 大流星伤害，96 点 = 48 颗心，能秒掉绝大多数精英怪但打不死坚守者 */
+    private static final float BIG_DAMAGE = 96.0F;
+    /** 伤害半径 = 2 倍砸坑半径，冲击波一直推到整个小流星散布区 */
+    private static final double BIG_DAMAGE_RADIUS = 18.0D;
     private static final double BIG_KNOCKBACK = 2.0D;
     private static final int BIG_DESTROY_RADIUS = 9;
     /** 每一列的深度在这两个值之间随机，坑底才是坑坑洼洼而不是一块平板 */
@@ -86,14 +88,32 @@ public class RainbowMeteor extends Entity
     /** 大流星压轴 */
     private static final int BIG_DELAY_TICKS = 40;
 
-    /** 小流星的水平漂移速度（格 / tick），决定拖尾的倾斜程度 */
-    private static final float MIN_DRIFT = 0.35F;
-    private static final float MAX_DRIFT = 0.75F;
+    /** 所有流星落地时与地面的夹角（度）。竖直下落是 90°，这里让它们统一斜着插下来 */
+    private static final double IMPACT_ANGLE = 45.0D;
+
+    /**
+     * 水平漂移速度（格 / tick），由下落速度和倾角推出来：
+     * tan(夹角) = 竖直速度 / 水平速度，所以水平 = 2.0 / tan(45°) = 2.0
+     */
+    private static final double DRIFT_SPEED = FALL_SPEED / Math.tan(Math.toRadians(IMPACT_ANGLE));
 
     /** 拖尾长度（格） */
     private static final double TRAIL_LENGTH = 8.0D;
-    private static final int SMALL_TRAIL_POINTS = 6;
-    private static final int BIG_TRAIL_POINTS = 10;
+    private static final int SMALL_TRAIL_POINTS = 9;
+    private static final int BIG_TRAIL_POINTS = 16;
+
+    /** 拖尾粒子尺寸 */
+    private static final float SMALL_TRAIL_SCALE = 2.0F;
+    private static final float BIG_TRAIL_SCALE = 3.6F;
+
+    /**
+     * 拖尾粒子往白色提亮的比例：0 = 色板原色，1 = 纯白。
+     * dust 粒子没有自发光通道，想让尾迹“亮”只能把颜色本身往白里推。
+     */
+    private static final float TRAIL_WHITEN = 0.55F;
+
+    /** 拖尾粒子在这一距离内才生成（格） */
+    private static final double TRAIL_RANGE = 128.0D;
 
     /** 坑底铺火的覆盖率 */
     private static final float CRATER_FIRE_CHANCE = 0.6F;
@@ -203,16 +223,16 @@ public class RainbowMeteor extends Entity
     /** 沿飞行方向的相反方向撒粒子，斜着的小流星会拉出斜的尾迹 */
     private void spawnTrailParticles()
     {
-        if (this.level().getNearestPlayer(this, 64.0D) == null)
+        if (this.level().getNearestPlayer(this, TRAIL_RANGE) == null)
         {
             return;
         }
 
         boolean big = this.isBig();
         int points = big ? BIG_TRAIL_POINTS : SMALL_TRAIL_POINTS;
-        float baseScale = big ? 3.0F : 1.6F;
+        float baseScale = big ? BIG_TRAIL_SCALE : SMALL_TRAIL_SCALE;
 
-        int rgb = this.getColor();
+        int rgb = RainbowLightning.brighten(this.getColor(), TRAIL_WHITEN);
         Vector3f color = new Vector3f(
                 ((rgb >> 16) & 0xFF) / 255.0F,
                 ((rgb >> 8) & 0xFF) / 255.0F,
@@ -241,13 +261,14 @@ public class RainbowMeteor extends Entity
                     0.0D, 0.0D, 0.0D);
         }
 
-        if (this.random.nextInt(big ? 2 : 3) == 0)
+        // 大流星每 tick 都拖火，小流星隔一 tick；火花也跟着加密一档
+        if (this.random.nextInt(big ? 1 : 2) == 0)
         {
             this.level().addParticle(ParticleTypes.FLAME,
                     this.getX(), this.getY(), this.getZ(), 0.0D, -0.1D, 0.0D);
         }
 
-        if (this.random.nextInt(4) == 0)
+        if (this.random.nextInt(2) == 0)
         {
             this.level().addParticle(ParticleTypes.ELECTRIC_SPARK,
                     this.getX(), this.getY(), this.getZ(), 0.0D, -0.2D, 0.0D);
@@ -290,9 +311,13 @@ public class RainbowMeteor extends Entity
             this.damaged = new HashSet<>();
         }
 
+        // 竖直范围也随半径放大：大流星是一团球形冲击波，不是一块贴着地面的薄板
+        double down = big ? radius * 0.5D : 3.0D;
+        double up = big ? radius * 0.7D : 4.0D;
+
         AABB area = new AABB(
-                this.getX() - radius, this.getY() - 3.0D, this.getZ() - radius,
-                this.getX() + radius, this.getY() + 4.0D, this.getZ() + radius);
+                this.getX() - radius, this.getY() - down, this.getZ() - radius,
+                this.getX() + radius, this.getY() + up, this.getZ() + radius);
 
         for (LivingEntity target : serverLevel.getEntitiesOfClass(LivingEntity.class, area))
         {
@@ -446,9 +471,31 @@ public class RainbowMeteor extends Entity
             groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(x), Mth.floor(z));
         }
 
+        // 小流星之间共用一份去重集合：同一发里不会对同一个怪叠加几十次 8 点
         Set<Entity> damaged = new HashSet<>();
 
         int smallCount = Math.round(Mth.lerp(power, SMALL_MIN, SMALL_MAX));
+
+        // 整场流星雨共用一个入射方位角：所有流星平行地斜插下来，才像同一场雨。
+        // 方位取玩家视线的水平方向，法阵就会开在准星前方五十格的空中，始终在视野里；
+        // 流星朝玩家这边斜插下来，而不是从背后飞过去
+        Vec3 look = player.getLookAngle();
+        double lookLength = Math.sqrt(look.x * look.x + look.z * look.z);
+        double azimuth = lookLength < 0.05D
+                ? random.nextDouble() * Math.PI * 2.0D
+                : Math.atan2(look.z / lookLength, look.x / lookLength);
+
+        float driftX = (float) (Math.cos(azimuth) * DRIFT_SPEED);
+        float driftZ = (float) (Math.sin(azimuth) * DRIFT_SPEED);
+
+        // 法阵开在大流星的出生点上，平面垂直于飞行方向。所有流星都在这个平面上出生，
+        // 所以它们看上去是从法阵里飞出来的。法阵要先于流星出现，必须在这里就生成
+        double fallTicks = 50.0D / FALL_SPEED;
+        double speed = Math.sqrt(driftX * driftX + FALL_SPEED * FALL_SPEED + driftZ * driftZ);
+
+        MeteorPortal.open(level,
+                x - driftX * fallTicks, groundY + 50.0D, z - driftZ * fallTicks,
+                driftX / speed, -FALL_SPEED / speed, driftZ / speed);
 
         for (int i = 0; i < smallCount; i++)
         {
@@ -459,20 +506,16 @@ public class RainbowMeteor extends Entity
             double sz = z + Math.sin(angle) * distance;
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(sx), Mth.floor(sz));
 
-            // 水平漂移：方向和速度都随机，拖尾就有了斜度
-            float driftAngle = random.nextFloat() * (float) (Math.PI * 2.0D);
-            float driftSpeed = MIN_DRIFT + random.nextFloat() * (MAX_DRIFT - MIN_DRIFT);
-            float driftX = (float) (Math.cos(driftAngle) * driftSpeed);
-            float driftZ = (float) (Math.sin(driftAngle) * driftSpeed);
-
             schedule(level, player, damaged, sx, sz, sy,
                     45.0D + random.nextDouble() * 10.0D, false,
                     driftX, driftZ,
                     random.nextInt(SMALL_SPREAD_TICKS + 1));
         }
 
-        // 大流星压轴，垂直落地
-        schedule(level, player, damaged, x, z, groundY, 50.0D, true, 0.0F, 0.0F, BIG_DELAY_TICKS);
+        // 大流星必须独立去重：小流星在 18 格内铺得极密（满蓄 96 颗、每颗 2.5 格判定），
+        // 落点附近的怪几乎都被小流星标记过了。共用集合的话大流星一个也打不到
+        Set<Entity> bigDamaged = new HashSet<>();
+        schedule(level, player, bigDamaged, x, z, groundY, 50.0D, true, driftX, driftZ, BIG_DELAY_TICKS);
     }
 
     private static void schedule(ServerLevel level, Player player, Set<Entity> damaged,
