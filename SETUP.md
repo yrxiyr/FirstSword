@@ -1,6 +1,6 @@
 # 开发环境说明
 
-工程：**The FirstMod**（mod id `thefirstmod`）
+工程：**The FirstMod**（mod id `chufeng`）
 Minecraft **1.21.1** + **NeoForge 21.1.264**，基于官方 MDK（ModDevGradle）。
 
 ## 本机环境
@@ -45,19 +45,19 @@ Gradle 发行版、Maven Central、Mojang 资源、Parchment 均直连，无需�
 ## 目录结构
 
 ```
-TheFirstMod/
+ChuFeng/
 ├─ gradle.properties          # 版本号 + mod 元数据（改这里）
 ├─ settings.gradle            # 仓库配置 + 镜像源
 ├─ build.gradle               # ModDevGradle 配置、run 配置
-├─ src/main/java/com/thefirstmod/
-│  ├─ TheFirstMod.java        # 主类：注册物品 + 创造模式标签页
+├─ src/main/java/com/chufeng/
+│  ├─ ChuFeng.java        # 主类：注册物品 + 创造模式标签页
 │  └─ Config.java             # 配置（logDirtBlock / magicNumber 等示例项）
 ├─ src/main/resources/
-│  ├─ assets/thefirstmod/
+│  ├─ assets/chufeng/
 │  │  ├─ lang/                # en_us.json / zh_cn.json
 │  │  ├─ models/item/         # 物品模型 JSON
 │  │  └─ textures/item/       # 16×16 贴图 PNG
-│  └─ data/thefirstmod/
+│  └─ data/chufeng/
 │     └─ recipe/              # 合成配方（1.21 起是单数 recipe）
 └─ src/main/templates/META-INF/neoforge.mods.toml   # 由 gradle 变量填充
 ```
@@ -67,9 +67,9 @@ TheFirstMod/
 ## 当前 mod 信息
 
 ```properties
-mod_id=thefirstmod
+mod_id=chufeng
 mod_name=The FirstMod
-mod_group_id=com.thefirstmod
+mod_group_id=com.chufeng
 mod_authors=YourNameHere, OtherNameHere
 ```
 
@@ -77,13 +77,21 @@ mod_authors=YourNameHere, OtherNameHere
 
 | id | 类型 | 说明 |
 |---|---|---|
-| `thefirstmod:first_sword` | 剑 | 中文名「初锋」，钻石剑基底，面板攻击力 14、攻速 -2.2 |
-| `thefirstmod:first_tab` | 创造模式标签页 | 显示名 "The FirstMod"，排在战斗标签页之前 |
-| `thefirstmod:rainbow_lightning` | 实体 | 点按右键召唤的彩虹闪电，范围伤害 + 击退，不点燃、不触发避雷针 |
-| `thefirstmod:rainbow_meteor` | 实体 | 长按 J 召唤的流星，45° 斜落，落地范围伤害 |
-| `thefirstmod:meteor_portal` | 实体 | 流星出生平面上的彩虹法阵，纯视觉 |
-| `thefirstmod:blink_trail` | 实体 | K 瞬闪斩留下的斩痕，纯视觉 |
-| `thefirstmod:slash_arc` | 实体 | 冲刺时的月牙刀光，程序化几何，纯视觉 |
+| `chufeng:first_sword` | 剑 | 中文名「初锋」，钻石剑基底，面板攻击力 14、攻速 -2.2，耐久无限、死亡不掉落 |
+| `chufeng:first_tab` | 创造模式标签页 | 显示名 "The FirstMod"，排在战斗标签页之前 |
+| `chufeng:rainbow_lightning` | 实体 | 点按右键召唤的彩虹闪电，范围伤害 + 击退，不点燃、不触发避雷针 |
+| `chufeng:rainbow_meteor` | 实体 | 长按 J 召唤的流星，45° 斜落，落地范围伤害 |
+| `chufeng:meteor_portal` | 实体 | 流星出生平面上的彩虹法阵，纯视觉 |
+| `chufeng:blink_trail` | 实体 | K 瞬闪斩留下的斩痕，纯视觉 |
+| `chufeng:slash_arc` | 实体 | 冲刺时的月牙刀光，程序化几何，纯视觉 |
+
+### 初锋的两条"神器"属性
+
+- **耐久无限**：物品原型上挂了 `DataComponents.UNBREAKABLE`（`new Unbreakable(true)`）。
+  这是组件默认值，所以已经存在存档里的老剑也会自动生效。
+- **死亡不掉落**（`SoulboundSword`）：不能拦掉落列表——原版 `dropAll()` 生成掉落物的同时
+  就把背包格子清空了，拦下来等于销毁。正确做法是在 `LivingDeathEvent`（原版 `die()` 开头、
+  早于 `dropAllDeathLoot`）里先把剑从背包取出暂存，`PlayerEvent.Clone`（`isWasDeath()`）时再塞回去。
 
 右键使用初锋：在玩家周围 **30 格**范围内落 **3 波彩虹雷电，每波 36 道**，
 冷却 1.5 秒（30 tick）。
@@ -279,10 +287,10 @@ mod_authors=YourNameHere, OtherNameHere
   距离/伤害/冷却全部在服务端 `ModNetwork.handleBlink` 里重新算
 
 配方：2 钻石 + 1 木棍（与原版钻石剑同形）。也可以直接
-`/give @s thefirstmod:first_sword`，或从创造模式 "The FirstMod" 标签页取。
+`/give @s chufeng:first_sword`，或从创造模式 "The FirstMod" 标签页取。
 
 需要再改包名时，用 IDEA 的 Refactor → Rename 改，再同步 `gradle.properties`
-里的 `mod_group_id`。`mod_id` 必须保持 `thefirstmod`，与 `TheFirstMod.MODID` 一致。
+里的 `mod_group_id`。`mod_id` 必须保持 `chufeng`，与 `ChuFeng.MODID` 一致。
 
 ## 常见问题
 
@@ -298,9 +306,9 @@ mod_authors=YourNameHere, OtherNameHere
 .\gradlew build
 ```
 
-产物 `build/libs/thefirstmod-1.6.0.jar` 就是可分发的模组包，直接放进目标版本的
+产物 `build/libs/chufeng-1.6.0.jar` 就是可分发的模组包，直接放进目标版本的
 `mods/` 文件夹即可，不需要额外转换或混淆步骤（NeoForge 1.21 运行时就用官方映射）。
 
 `build.gradle` 里已排除 `.cache/**`，避免数据生成缓存被打进 jar。
 
-桌面上的 `TheFirstMod-1.6.0\` 是发布副本，含 jar 和安装说明。
+桌面上的 `ChuFeng-1.6.0\` 是发布副本，含 jar 和安装说明。

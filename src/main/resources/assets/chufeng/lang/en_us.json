@@ -1,0 +1,13 @@
+{
+  "itemGroup.chufeng": "The FirstMod",
+  "item.chufeng.first_sword": "First Sword",
+  "tooltip.chufeng.first_sword.rainbow": "Right-click: summon rainbow lightning around you",
+  "tooltip.chufeng.first_sword.meteor": "Hold J: call down a meteor shower",
+  "tooltip.chufeng.first_sword.blink": "K: blink strike, cutting everything in your path",
+  "tooltip.chufeng.first_sword.core": "Core: %s",
+  "key.chufeng.meteor": "Meteor Shower",
+  "key.chufeng.blink": "Blink Strike",
+  "message.chufeng.blink_cooldown": "Blink Strike cooling down: %s s",
+  "message.chufeng.need_sword": "You must hold the First Sword",
+  "key.categories.chufeng": "The FirstMod"
+}
