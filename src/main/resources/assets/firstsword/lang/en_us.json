@@ -1,0 +1,13 @@
+{
+  "itemGroup.firstsword": "The FirstMod",
+  "item.firstsword.first_sword": "First Sword",
+  "tooltip.firstsword.first_sword.rainbow": "Right-click: summon rainbow lightning around you",
+  "tooltip.firstsword.first_sword.meteor": "Hold J: call down a meteor shower",
+  "tooltip.firstsword.first_sword.blink": "K: blink strike, cutting everything in your path",
+  "tooltip.firstsword.first_sword.core": "Core: %s",
+  "key.firstsword.meteor": "Meteor Shower",
+  "key.firstsword.blink": "Blink Strike",
+  "message.firstsword.blink_cooldown": "Blink Strike cooling down: %s s",
+  "message.firstsword.need_sword": "You must hold the First Sword",
+  "key.categories.firstsword": "The FirstMod"
+}

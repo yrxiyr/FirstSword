@@ -4,7 +4,7 @@ Minecraft **1.21.1** + **NeoForge 21.1.x** 的模组，加了一把叫「初锋�
 
 ## 内容
 
-### 初锋 `chufeng:first_sword`
+### 初锋 `firstsword:first_sword`
 
 - 钻石级剑，面板攻击力 **14**，攻速 -2.2
 - 合成：2 钻石 + 1 木棍
@@ -61,7 +61,7 @@ Minecraft **1.21.1** + **NeoForge 21.1.x** 的模组，加了一把叫「初锋�
 ## 安装
 
 1. 安装 Minecraft 1.21.1 与 NeoForge 21.1.x
-2. 把 `chufeng-1.6.0.jar` 放进该版本的 `mods` 文件夹
+2. 把 `firstsword-1.6.0.jar` 放进该版本的 `mods` 文件夹
 
 ## 从源码构建
 
