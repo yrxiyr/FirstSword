@@ -100,26 +100,112 @@ public class MeteorPortalRenderer extends EntityRenderer<MeteorPortal>
         VertexConsumer consumer = buffer.getBuffer(PORTAL);
         Matrix4f matrix = poseStack.last().pose();
 
+        // 法阵半径跟着这一发流星的实际散布范围走
+        float fieldRadius = entity.radius();
         float spin = age * ROTATION_SPEED;
         float hue = age * HUE_SPEED;
         float pulse = 0.82F + 0.18F * (float) Math.sin(age * 0.35D);
 
+        // 整体柔光：一整片从中心向外散开的光，让法阵在天上有"存在感"
+        glow(consumer, matrix, right, up, fieldRadius, 1.25F, alpha * pulse * 0.07F);
+
         // 外圈粗环，正着转
-        ring(consumer, matrix, right, up, 0.93F, 1.0F, spin, hue, alpha * pulse);
+        ring(consumer, matrix, right, up, fieldRadius, 0.93F, 1.0F, spin, hue, alpha * pulse);
 
         // 内圈细环，反着转，色相错开
-        ring(consumer, matrix, right, up, 0.79F, 0.815F, -spin * 1.6F, hue + 0.35F, alpha * pulse * 0.8F);
+        ring(consumer, matrix, right, up, fieldRadius, 0.79F, 0.815F, -spin * 1.6F, hue + 0.35F, alpha * pulse * 0.8F);
 
         // 两道环之间的辐条
-        spokes(consumer, matrix, right, up, 0.815F, 0.93F, -spin * 1.6F, hue, alpha * pulse * 0.6F);
+        spokes(consumer, matrix, right, up, fieldRadius, 0.815F, 0.93F, -spin * 1.6F, hue, alpha * pulse * 0.6F);
 
         // 内圈里的六芒星
-        hexagram(consumer, matrix, right, up, 0.52F, spin * 0.5F, hue, alpha * pulse * 0.85F);
+        hexagram(consumer, matrix, right, up, fieldRadius, 0.52F, spin * 0.5F, hue, alpha * pulse * 0.85F);
+
+        // 外环上的闪光点：八个位置各闪各的
+        sparkles(consumer, matrix, right, up, fieldRadius, 0.965F, age, alpha * pulse);
+    }
+
+    /**
+     * 整体柔光：几层同心环叠出来的径向渐变，中心浓、外缘透明。
+     * 法阵本来只有线条，加这一层之后在天上是一整团光。
+     */
+    private static void glow(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
+                             float fieldRadius, float fraction, float alpha)
+    {
+        int segments = 48;
+        int rings = 3;
+
+        for (int ring = 0; ring < rings; ring++)
+        {
+            float t0 = ring / (float) rings;
+            float t1 = (ring + 1) / (float) rings;
+
+            float a0 = alpha * (1.0F - t0) * (1.0F - t0);
+            float a1 = alpha * (1.0F - t1) * (1.0F - t1);
+
+            for (int i = 0; i < segments; i++)
+            {
+                float ang0 = TWO_PI * i / segments;
+                float ang1 = TWO_PI * (i + 1) / segments;
+
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t0, ang0, 0xFFFFFF, a0);
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t1, ang0, 0xFFFFFF, a1);
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t1, ang1, 0xFFFFFF, a1);
+
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t0, ang0, 0xFFFFFF, a0);
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t1, ang1, 0xFFFFFF, a1);
+                polar(consumer, matrix, right, up, fieldRadius, fraction * t0, ang1, 0xFFFFFF, a0);
+            }
+        }
+    }
+
+    /** 环上的一圈闪光点：每个点是一枚四芒星，各自错开相位闪 */
+    private static void sparkles(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
+                                 float fieldRadius, float ringFraction, float time, float alpha)
+    {
+        int count = 8;
+
+        for (int i = 0; i < count; i++)
+        {
+            float baseAngle = TWO_PI * i / count + time * 0.015F;
+
+            // 每个点的相位错开，看起来是依次亮起来
+            float twinkle = 0.5F + 0.5F * (float) Math.sin(time * 1.5F + i * 1.3F);
+            float strength = alpha * (0.2F + 0.8F * twinkle);
+
+            int rgb = RainbowHue.rgb(i / (float) count + time * 0.02F);
+
+            float red = ((rgb >> 16) & 0xFF) / 255.0F;
+            float green = ((rgb >> 8) & 0xFF) / 255.0F;
+            float blue = (rgb & 0xFF) / 255.0F;
+
+            double cx = Math.cos(baseAngle) * fieldRadius * ringFraction;
+            double cy = Math.sin(baseAngle) * fieldRadius * ringFraction;
+
+            float spikeLength = 1.4F;
+            float halfWidth = 0.11F;
+
+            for (int s = 0; s < 4; s++)
+            {
+                float dir = TWO_PI * s / 4.0F + baseAngle;
+
+                float cos = (float) Math.cos(dir);
+                float sin = (float) Math.sin(dir);
+
+                float px = -sin * halfWidth;
+                float py = cos * halfWidth;
+
+                plane(consumer, matrix, right, up, cx - px, cy - py, red, green, blue, strength);
+                plane(consumer, matrix, right, up, cx + px, cy + py, red, green, blue, strength);
+                plane(consumer, matrix, right, up, cx + cos * spikeLength, cy + sin * spikeLength,
+                        red, green, blue, 0.0F);
+            }
+        }
     }
 
     /** 一道圆环，颜色沿圆周扫过整个色相 */
     private static void ring(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
-                             float inner, float outer, float spin, float hueBase, float alpha)
+                             float fieldRadius, float inner, float outer, float spin, float hueBase, float alpha)
     {
         for (int i = 0; i < RING_SEGMENTS; i++)
         {
@@ -129,37 +215,37 @@ public class MeteorPortalRenderer extends EntityRenderer<MeteorPortal>
             int c0 = RainbowHue.rgb(a0 / TWO_PI + hueBase);
             int c1 = RainbowHue.rgb(a1 / TWO_PI + hueBase);
 
-            polar(consumer, matrix, right, up, inner, a0, c0, alpha);
-            polar(consumer, matrix, right, up, outer, a0, c0, alpha);
-            polar(consumer, matrix, right, up, outer, a1, c1, alpha);
-            polar(consumer, matrix, right, up, inner, a1, c1, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, inner, a0, c0, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, outer, a0, c0, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, outer, a1, c1, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, inner, a1, c1, alpha);
         }
     }
 
     /** 圆环之间的放射状短条 */
     private static void spokes(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
-                               float from, float to, float spin, float hueBase, float alpha)
+                               float fieldRadius, float from, float to, float spin, float hueBase, float alpha)
     {
         // 把 0.4 格的宽度换算成弧度：半径越大，同样的角宽对应的弧长越长
-        float halfAngle = 0.4F / (to * MeteorPortal.RADIUS);
+        float halfAngle = 0.4F / (to * fieldRadius);
 
         for (int i = 0; i < SPOKES; i++)
         {
             float angle = spin + TWO_PI * i / SPOKES;
             int rgb = RainbowHue.rgb(angle / TWO_PI + hueBase);
 
-            polar(consumer, matrix, right, up, from, angle - halfAngle, rgb, alpha);
-            polar(consumer, matrix, right, up, to, angle - halfAngle, rgb, alpha);
-            polar(consumer, matrix, right, up, to, angle + halfAngle, rgb, alpha);
-            polar(consumer, matrix, right, up, from, angle + halfAngle, rgb, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, from, angle - halfAngle, rgb, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, to, angle - halfAngle, rgb, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, to, angle + halfAngle, rgb, alpha);
+            polar(consumer, matrix, right, up, fieldRadius, from, angle + halfAngle, rgb, alpha);
         }
     }
 
     /** 两个交叠的等边三角形，画成细线 */
     private static void hexagram(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
-                                 float radius, float spin, float hueBase, float alpha)
+                                 float fieldRadius, float radius, float spin, float hueBase, float alpha)
     {
-        double r = radius * MeteorPortal.RADIUS;
+        double r = radius * fieldRadius;
 
         for (int triangle = 0; triangle < 2; triangle++)
         {
@@ -209,9 +295,9 @@ public class MeteorPortalRenderer extends EntityRenderer<MeteorPortal>
 
     /** 极坐标 → 平面坐标 → 世界坐标 */
     private static void polar(VertexConsumer consumer, Matrix4f matrix, Vec3 right, Vec3 up,
-                              float radius, float angle, int rgb, float alpha)
+                              float fieldRadius, float radius, float angle, int rgb, float alpha)
     {
-        double r = radius * MeteorPortal.RADIUS;
+        double r = radius * fieldRadius;
 
         plane(consumer, matrix, right, up,
                 Math.cos(angle) * r, Math.sin(angle) * r,

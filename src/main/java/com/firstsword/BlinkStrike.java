@@ -26,6 +26,7 @@ import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -58,8 +59,8 @@ public final class BlinkStrike
      */
     private static final double FLOAT_UP = 0.1D;
 
-    /** 路径判定半径（格） */
-    private static final double PATH_RADIUS = 2.4D;
+    /** 路径判定半径（格）。刀风很宽，路线两侧的怪都能扫到 */
+    private static final double PATH_RADIUS = 3.2D;
     /** 路径伤害 */
     private static final float PATH_DAMAGE = 30.0F;
 
@@ -87,8 +88,21 @@ public final class BlinkStrike
     /** 冷却（tick），8 秒 */
     public static final int COOLDOWN = 160;
 
-    /** 每个玩家的冷却结束时刻，按游戏时间记 */
-    private static final Map<UUID, Long> READY_AT = new HashMap<>();
+    /**
+     * 每个玩家的充能状态。
+     *
+     * 上限默认 1（就是「冷却好了才能用」），词条可以把它抬到 3；
+     * 每补一层仍然要等一个完整的 {@link #COOLDOWN}。
+     */
+    private static final class Charges
+    {
+        /** -1 表示还没初始化，第一次查询时填成上限 */
+        int charges = -1;
+        /** 下一层的恢复时刻，0 表示已经满了、不用计时 */
+        long nextRecharge;
+    }
+
+    private static final Map<UUID, Charges> CHARGES = new HashMap<>();
 
     /** 正在冲刺的玩家 */
     private static final List<Dash> ACTIVE = new ArrayList<>();
@@ -97,20 +111,72 @@ public final class BlinkStrike
     {
     }
 
-    /** 剩余冷却 tick，0 表示可用 */
-    public static int getRemainingCooldown(ServerPlayer player, long gameTime)
+    /** 取（并顺带推进）玩家的充能状态 */
+    private static Charges update(ServerPlayer player, int max, long now)
     {
-        Long readyAt = READY_AT.get(player.getUUID());
-        return readyAt == null ? 0 : (int) Math.max(0L, readyAt - gameTime);
+        Charges state = CHARGES.computeIfAbsent(player.getUUID(), uuid -> new Charges());
+
+        if (state.charges < 0 || state.charges > max)
+        {
+            state.charges = state.charges < 0 ? max : Math.min(state.charges, max);
+
+            if (state.charges >= max)
+            {
+                state.nextRecharge = 0L;
+            }
+        }
+
+        while (state.charges < max && state.nextRecharge > 0L && now >= state.nextRecharge)
+        {
+            state.charges++;
+            state.nextRecharge = state.charges < max ? state.nextRecharge + COOLDOWN : 0L;
+        }
+
+        // 换上一把带充能的剑时，从「有时间没充」开始补，而不是永远卡在 0
+        if (state.charges < max && state.nextRecharge == 0L)
+        {
+            state.nextRecharge = now + COOLDOWN;
+        }
+
+        return state;
     }
 
-    public static void cast(ServerLevel level, ServerPlayer player, ItemStack sword)
+    /** 当前可用层数 */
+    public static int getCharges(ServerPlayer player, int max, long gameTime)
+    {
+        return update(player, max, gameTime).charges;
+    }
+
+    /** 剩余冷却 tick，0 表示现在就能用（只要还有层数） */
+    public static int getRemainingCooldown(ServerPlayer player, long gameTime, int max)
+    {
+        Charges state = update(player, max, gameTime);
+
+        if (state.charges > 0)
+        {
+            return 0;
+        }
+
+        return (int) Math.max(0L, state.nextRecharge - gameTime);
+    }
+
+    /** 冲刺成功返回 true */
+    public static boolean cast(ServerLevel level, ServerPlayer player, ItemStack sword)
     {
         long now = level.getGameTime();
+        int max = FirstSwordItem.blinkCharges(sword);
+        Charges state = update(player, max, now);
 
-        if (getRemainingCooldown(player, now) > 0)
+        if (state.charges <= 0)
         {
-            return;
+            return false;
+        }
+
+        state.charges--;
+
+        if (state.nextRecharge == 0L)
+        {
+            state.nextRecharge = now + COOLDOWN;
         }
 
         // 词条会改写斩击伤害，算好之后整次冲刺沿用同一组数
@@ -130,7 +196,10 @@ public final class BlinkStrike
 
         Vec3 direction = horizontal.normalize();
 
-        Dash dash = new Dash(player, level, direction, player.position(), pathDamage, landingDamage);
+        List<SwordCore> cores = SwordCores.on(sword);
+
+        Dash dash = new Dash(player, level, direction, player.position(), pathDamage, landingDamage,
+                cores);
         ACTIVE.add(dash);
 
         // 立刻推第一下，松手当 tick 就开始动
@@ -139,7 +208,12 @@ public final class BlinkStrike
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 1.0F, 0.7F);
 
-        READY_AT.put(player.getUUID(), now + COOLDOWN);
+        for (SwordCore core : cores)
+        {
+            core.onBlinkCast(player, sword);
+        }
+
+        return true;
     }
 
     /**
@@ -393,12 +467,21 @@ public final class BlinkStrike
             // knockback 内部是「减去」传入的方向，所以这里要取反
             target.knockback(KNOCKBACK, -thrust.x, -thrust.z);
         }
+
+        // 词条钩子：只对剑上已经装着的词条生效
+        for (SwordCore core : dash.cores)
+        {
+            core.onBlinkHit(dash.level, dash.player, target);
+        }
+
+        // 公开事件：附属模组用它在「还没装词条」时就统计命中
+        NeoForge.EVENT_BUS.post(new BlinkHitEvent(dash.level, dash.player, target));
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event)
     {
-        READY_AT.clear();
+        CHARGES.clear();
         ACTIVE.clear();
     }
 
@@ -411,6 +494,7 @@ public final class BlinkStrike
         final Vec3 start;
         final float pathDamage;
         final float landingDamage;
+        final List<SwordCore> cores;
         final Set<Entity> damaged = new HashSet<>();
         final double startY;
 
@@ -421,7 +505,7 @@ public final class BlinkStrike
         double speedScale = 1.0D;
 
         Dash(ServerPlayer player, ServerLevel level, Vec3 direction, Vec3 start,
-             float pathDamage, float landingDamage)
+             float pathDamage, float landingDamage, List<SwordCore> cores)
         {
             this.player = player;
             this.level = level;
@@ -430,6 +514,7 @@ public final class BlinkStrike
             this.startY = start.y;
             this.pathDamage = pathDamage;
             this.landingDamage = landingDamage;
+            this.cores = cores;
             this.previous = start;
         }
     }

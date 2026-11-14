@@ -28,6 +28,8 @@ public class MeteorPortal extends Entity
             SynchedEntityData.defineId(MeteorPortal.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_DIR_Y =
             SynchedEntityData.defineId(MeteorPortal.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_RADIUS =
+            SynchedEntityData.defineId(MeteorPortal.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_DIR_Z =
             SynchedEntityData.defineId(MeteorPortal.class, EntityDataSerializers.FLOAT);
 
@@ -40,9 +42,15 @@ public class MeteorPortal extends Entity
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder)
     {
+        builder.define(DATA_RADIUS, RADIUS);
         builder.define(DATA_DIR_X, 0.0F);
         builder.define(DATA_DIR_Y, -1.0F);
         builder.define(DATA_DIR_Z, 0.0F);
+    }
+
+    public float radius()
+    {
+        return this.entityData.get(DATA_RADIUS);
     }
 
     public float dirX()
@@ -67,10 +75,11 @@ public class MeteorPortal extends Entity
      * @param dirX/Y/Z  流星的飞行方向，法阵平面垂直于它
      */
     public static void open(ServerLevel level, double x, double y, double z,
-                            double dirX, double dirY, double dirZ)
+                            double dirX, double dirY, double dirZ, double radius)
     {
         MeteorPortal portal = new MeteorPortal(FirstSword.METEOR_PORTAL.get(), level);
         portal.setPos(x, y, z);
+        portal.entityData.set(DATA_RADIUS, (float) radius);
         portal.entityData.set(DATA_DIR_X, (float) dirX);
         portal.entityData.set(DATA_DIR_Y, (float) dirY);
         portal.entityData.set(DATA_DIR_Z, (float) dirZ);
@@ -99,7 +108,7 @@ public class MeteorPortal extends Entity
     public AABB getBoundingBoxForCulling()
     {
         // 实体本体是 0 尺寸，但法阵直径 48 格；按本体算会被视锥剔除掉
-        return super.getBoundingBoxForCulling().inflate(RADIUS);
+        return super.getBoundingBoxForCulling().inflate(this.radius());
     }
 
     @Override

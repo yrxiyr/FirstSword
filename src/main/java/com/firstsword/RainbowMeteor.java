@@ -70,6 +70,18 @@ public class RainbowMeteor extends Entity
     private static final int BIG_DESTROY_DEPTH_MAX = 5;
     private static final int BIG_MAX_DESTROY = 3000;
 
+    // ---- 中型流星（由词条启用）----
+    private static final float MEDIUM_DAMAGE = 36.0F;
+    /** 爆炸半径 3 格 */
+    private static final double MEDIUM_DAMAGE_RADIUS = 3.0D;
+    private static final double MEDIUM_KNOCKBACK = 1.6D;
+    private static final int MEDIUM_DESTROY_RADIUS = 3;
+    private static final int MEDIUM_DESTROY_DEPTH = 2;
+    private static final int MEDIUM_MAX_DESTROY = 200;
+    /** 中型流星排在这么多 tick 内落下，早于大流星 */
+    private static final int MEDIUM_DELAY_MIN = 8;
+    private static final int MEDIUM_DELAY_MAX = 34;
+
     // ---- 小流星 ----
     private static final float SMALL_DAMAGE = 8.0F;
     private static final double SMALL_DAMAGE_RADIUS = 2.5D;
@@ -123,6 +135,8 @@ public class RainbowMeteor extends Entity
             SynchedEntityData.defineId(RainbowMeteor.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> DATA_BIG =
             SynchedEntityData.defineId(RainbowMeteor.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_MEDIUM =
+            SynchedEntityData.defineId(RainbowMeteor.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Float> DATA_DRIFT_X =
             SynchedEntityData.defineId(RainbowMeteor.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_DRIFT_Z =
@@ -162,6 +176,16 @@ public class RainbowMeteor extends Entity
     public boolean isBig()
     {
         return this.entityData.get(DATA_BIG);
+    }
+
+    public void setMedium(boolean medium)
+    {
+        this.entityData.set(DATA_MEDIUM, medium);
+    }
+
+    public boolean isMedium()
+    {
+        return this.entityData.get(DATA_MEDIUM);
     }
 
     public void setDrift(float driftX, float driftZ)
@@ -205,6 +229,7 @@ public class RainbowMeteor extends Entity
     {
         builder.define(DATA_COLOR, 0xFFFFFF);
         builder.define(DATA_BIG, false);
+        builder.define(DATA_MEDIUM, false);
         builder.define(DATA_DRIFT_X, 0.0F);
         builder.define(DATA_DRIFT_Z, 0.0F);
     }
@@ -238,8 +263,14 @@ public class RainbowMeteor extends Entity
         }
 
         boolean big = this.isBig();
-        int points = big ? BIG_TRAIL_POINTS : SMALL_TRAIL_POINTS;
-        float baseScale = big ? BIG_TRAIL_SCALE : SMALL_TRAIL_SCALE;
+        boolean medium = !big && this.isMedium();
+
+        int points = big ? BIG_TRAIL_POINTS : medium ? 12 : SMALL_TRAIL_POINTS;
+        float baseScale = big ? BIG_TRAIL_SCALE : medium ? 2.6F : SMALL_TRAIL_SCALE;
+
+        // 闪烁：每颗流星用自己的相位做正弦脉动，整片雨看起来是一闪一闪的
+        float phase = (this.tickCount + this.getId() * 0.37F) * 0.9F;
+        baseScale *= 0.7F + 0.3F * Mth.sin(phase);
 
         int rgb = RainbowLightning.brighten(this.getColor(), TRAIL_WHITEN);
         Vector3f color = new Vector3f(
@@ -260,7 +291,7 @@ public class RainbowMeteor extends Entity
         {
             double t = i / (double) (points - 1);
             double distance = t * TRAIL_LENGTH;
-            double spread = (0.12D + t * 0.4D) * (big ? 2.0D : 1.0D);
+            double spread = (0.12D + t * 0.4D) * (big ? 2.0D : medium ? 1.5D : 1.0D);
 
             this.level().addParticle(
                     new DustParticleOptions(color, baseScale * (1.0F - (float) t * 0.6F)),
@@ -282,6 +313,41 @@ public class RainbowMeteor extends Entity
             this.level().addParticle(ParticleTypes.ELECTRIC_SPARK,
                     this.getX(), this.getY(), this.getZ(), 0.0D, -0.2D, 0.0D);
         }
+
+        // 闪烁只给中型和大流星——小流星数量太多，亮点会糊成一片，反而看不出来
+        if (big || medium)
+        {
+            // 每几 tick 在原地炸开一圈亮白星点，肉眼能清楚看到在闪
+            if (this.tickCount % (big ? 2 : 3) == 0)
+            {
+                int burst = big ? 10 : 6;
+
+                for (int i = 0; i < burst; i++)
+                {
+                    double ox = (this.random.nextDouble() - 0.5D) * 1.6D;
+                    double oy = (this.random.nextDouble() - 0.5D) * 1.6D;
+                    double oz = (this.random.nextDouble() - 0.5D) * 1.6D;
+
+                    this.level().addParticle(ParticleTypes.END_ROD,
+                            this.getX() + ox, this.getY() + oy, this.getZ() + oz,
+                            0.0D, 0.0D, 0.0D);
+                }
+            }
+
+            if (this.random.nextInt(2) == 0)
+            {
+                this.level().addParticle(ParticleTypes.FIREWORK,
+                        this.getX(), this.getY(), this.getZ(), 0.0D, 0.0D, 0.0D);
+            }
+
+            // 大一号的色尘光晕，让「闪」有一个实体感的核心
+            if (this.tickCount % 4 == 0)
+            {
+                this.level().addParticle(
+                        new DustParticleOptions(color, big ? 6.5F : 4.5F),
+                        this.getX(), this.getY(), this.getZ(), 0.0D, 0.0D, 0.0D);
+            }
+        }
     }
 
     private void impact()
@@ -295,17 +361,40 @@ public class RainbowMeteor extends Entity
         this.destroyTerrain(serverLevel);
 
         boolean big = this.isBig();
+        boolean medium = !big && this.isMedium();
+
+        int count = big ? 12 : medium ? 5 : 2;
+        double spread = big ? 2.0D : medium ? 0.9D : 0.4D;
+
         serverLevel.sendParticles(ParticleTypes.EXPLOSION,
                 this.getX(), this.getY() + 0.5D, this.getZ(),
-                big ? 12 : 2, big ? 2.0D : 0.4D, big ? 1.0D : 0.2D, big ? 2.0D : 0.4D, 0.0D);
+                count, spread, spread * 0.5D, spread, 0.0D);
+
+        // 落地闪光：火星四溅 + 一圈亮白亮点，大/中型再补一记白闪
+        serverLevel.sendParticles(ParticleTypes.FIREWORK,
+                this.getX(), this.getY() + 0.5D, this.getZ(),
+                big ? 48 : medium ? 20 : 7, spread * 1.5D, spread, spread * 1.5D, 0.25D);
+
+        serverLevel.sendParticles(ParticleTypes.END_ROD,
+                this.getX(), this.getY() + 0.5D, this.getZ(),
+                big ? 24 : medium ? 10 : 3, spread, spread * 0.6D, spread, 0.15D);
+
+        if (big || medium)
+        {
+            serverLevel.sendParticles(ParticleTypes.FLASH,
+                    this.getX(), this.getY() + 0.8D, this.getZ(),
+                    1, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
     }
 
     private void damageNearby(ServerLevel serverLevel)
     {
         boolean big = this.isBig();
-        double radius = big ? BIG_DAMAGE_RADIUS : SMALL_DAMAGE_RADIUS;
-        float damage = big ? BIG_DAMAGE : SMALL_DAMAGE;
-        double knockback = big ? BIG_KNOCKBACK : SMALL_KNOCKBACK;
+        boolean medium = !big && this.isMedium();
+
+        double radius = big ? BIG_DAMAGE_RADIUS : medium ? MEDIUM_DAMAGE_RADIUS : SMALL_DAMAGE_RADIUS;
+        float damage = big ? BIG_DAMAGE : medium ? MEDIUM_DAMAGE : SMALL_DAMAGE;
+        double knockback = big ? BIG_KNOCKBACK : medium ? MEDIUM_KNOCKBACK : SMALL_KNOCKBACK;
 
         ServerPlayer owner = this.ownerUuid == null
                 ? null
@@ -335,7 +424,14 @@ public class RainbowMeteor extends Entity
                 continue;
             }
 
-            if (target.hurt(source, damage))
+            float finalDamage = damage;
+
+            for (SwordCore core : this.cores)
+            {
+                finalDamage = core.meteorDamage(finalDamage, target);
+            }
+
+            if (target.hurt(source, finalDamage))
             {
                 target.knockback(knockback,
                         this.getX() - target.getX(),
@@ -357,10 +453,12 @@ public class RainbowMeteor extends Entity
     private void destroyTerrain(ServerLevel serverLevel)
     {
         boolean big = this.isBig();
-        int radius = big ? BIG_DESTROY_RADIUS : SMALL_DESTROY_RADIUS;
-        int minDepth = big ? BIG_DESTROY_DEPTH_MIN : SMALL_DESTROY_DEPTH;
-        int maxDepth = big ? BIG_DESTROY_DEPTH_MAX : SMALL_DESTROY_DEPTH;
-        int maxDestroy = big ? BIG_MAX_DESTROY : SMALL_MAX_DESTROY;
+        boolean medium = !big && this.isMedium();
+
+        int radius = big ? BIG_DESTROY_RADIUS : medium ? MEDIUM_DESTROY_RADIUS : SMALL_DESTROY_RADIUS;
+        int minDepth = big ? BIG_DESTROY_DEPTH_MIN : medium ? MEDIUM_DESTROY_DEPTH : SMALL_DESTROY_DEPTH;
+        int maxDepth = big ? BIG_DESTROY_DEPTH_MAX : medium ? MEDIUM_DESTROY_DEPTH : SMALL_DESTROY_DEPTH;
+        int maxDestroy = big ? BIG_MAX_DESTROY : medium ? MEDIUM_MAX_DESTROY : SMALL_MAX_DESTROY;
 
         BlockPos center = BlockPos.containing(this.getX(), this.getY() - 0.5D, this.getZ());
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
@@ -497,6 +595,19 @@ public class RainbowMeteor extends Entity
 
         int smallCount = Math.round(Mth.lerp(power, SMALL_MIN, SMALL_MAX));
 
+        // 词条可以改散布范围、小流星数量、中型流星数量、法阵半径
+        double scatter = SCATTER_RADIUS;
+        int mediumCount = 0;
+        double fieldRadius = MeteorPortal.RADIUS;
+
+        for (SwordCore core : cores)
+        {
+            scatter = core.meteorScatterRadius(scatter);
+            smallCount = core.smallMeteorCount(smallCount);
+            mediumCount += core.mediumMeteorCount(random);
+            fieldRadius = core.meteorFieldRadius(fieldRadius);
+        }
+
         // 整场流星雨共用一个入射方位角：所有流星平行地斜插下来，才像同一场雨。
         // 方位取玩家视线的水平方向，法阵就会开在准星前方五十格的空中，始终在视野里；
         // 流星朝玩家这边斜插下来，而不是从背后飞过去
@@ -516,35 +627,53 @@ public class RainbowMeteor extends Entity
 
         MeteorPortal.open(level,
                 x - driftX * fallTicks, groundY + 50.0D, z - driftZ * fallTicks,
-                driftX / speed, -FALL_SPEED / speed, driftZ / speed);
+                driftX / speed, -FALL_SPEED / speed, driftZ / speed,
+                fieldRadius);
 
         for (int i = 0; i < smallCount; i++)
         {
             double angle = random.nextDouble() * Math.PI * 2.0D;
-            double distance = SCATTER_RADIUS * Math.sqrt(random.nextDouble());
+            double distance = scatter * Math.sqrt(random.nextDouble());
 
             double sx = x + Math.cos(angle) * distance;
             double sz = z + Math.sin(angle) * distance;
             int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(sx), Mth.floor(sz));
 
             schedule(level, player, damaged, cores, sx, sz, sy,
-                    45.0D + random.nextDouble() * 10.0D, false,
+                    45.0D + random.nextDouble() * 10.0D, false, false,
                     driftX, driftZ,
                     random.nextInt(SMALL_SPREAD_TICKS + 1));
+        }
+
+        // 中型流星：和小流星一样散开，但排在大流星之前落下
+        for (int i = 0; i < mediumCount; i++)
+        {
+            double angle = random.nextDouble() * Math.PI * 2.0D;
+            double distance = scatter * Math.sqrt(random.nextDouble());
+
+            double sx = x + Math.cos(angle) * distance;
+            double sz = z + Math.sin(angle) * distance;
+            int sy = level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(sx), Mth.floor(sz));
+
+            schedule(level, player, damaged, cores, sx, sz, sy,
+                    45.0D + random.nextDouble() * 10.0D, false, true,
+                    driftX, driftZ,
+                    MEDIUM_DELAY_MIN + random.nextInt(MEDIUM_DELAY_MAX - MEDIUM_DELAY_MIN + 1));
         }
 
         // 大流星必须独立去重：小流星在 18 格内铺得极密（满蓄 96 颗、每颗 2.5 格判定），
         // 落点附近的怪几乎都被小流星标记过了。共用集合的话大流星一个也打不到
         Set<Entity> bigDamaged = new HashSet<>();
-        schedule(level, player, bigDamaged, cores, x, z, groundY, 50.0D, true, driftX, driftZ, BIG_DELAY_TICKS);
+        schedule(level, player, bigDamaged, cores, x, z, groundY, 50.0D, true, false,
+                driftX, driftZ, BIG_DELAY_TICKS);
     }
 
     private static void schedule(ServerLevel level, Player player, Set<Entity> damaged, List<SwordCore> cores,
                                  double x, double z, double groundY,
-                                 double heightAbove, boolean big, float driftX, float driftZ, int delay)
+                                 double heightAbove, boolean big, boolean medium, float driftX, float driftZ, int delay)
     {
         PENDING.add(new Scheduled(level, player, damaged, cores, x, z, groundY, heightAbove,
-                big, driftX, driftZ, delay));
+                big, medium, driftX, driftZ, delay));
     }
 
     /** 一条待生成的流星记录 */
@@ -559,13 +688,14 @@ public class RainbowMeteor extends Entity
         final double groundY;
         final double heightAbove;
         final boolean big;
+        final boolean medium;
         final float driftX;
         final float driftZ;
         int ticksLeft;
 
         Scheduled(ServerLevel level, Player player, Set<Entity> damaged, List<SwordCore> cores,
                   double x, double z, double groundY, double heightAbove,
-                  boolean big, float driftX, float driftZ, int delay)
+                  boolean big, boolean medium, float driftX, float driftZ, int delay)
         {
             this.level = level;
             this.player = player;
@@ -576,6 +706,7 @@ public class RainbowMeteor extends Entity
             this.groundY = groundY;
             this.heightAbove = heightAbove;
             this.big = big;
+            this.medium = medium;
             this.driftX = driftX;
             this.driftZ = driftZ;
             this.ticksLeft = delay;
@@ -600,7 +731,7 @@ public class RainbowMeteor extends Entity
             {
                 iterator.remove();
                 spawn(next.level, next.player, next.level.random, next.damaged, next.cores,
-                        next.x, next.z, next.groundY, next.heightAbove, next.big,
+                        next.x, next.z, next.groundY, next.heightAbove, next.big, next.medium,
                         next.driftX, next.driftZ);
             }
         }
@@ -614,7 +745,8 @@ public class RainbowMeteor extends Entity
 
     private static void spawn(ServerLevel level, Player player, RandomSource random, Set<Entity> damaged,
                               List<SwordCore> cores,
-                              double x, double z, double groundY, double heightAbove, boolean big,
+                              double x, double z, double groundY, double heightAbove,
+                              boolean big, boolean medium,
                               float driftX, float driftZ)
     {
         // 从目标位置往回推：飞多少 tick，就偏移多少水平距离
@@ -629,9 +761,34 @@ public class RainbowMeteor extends Entity
         meteor.setDamaged(damaged);
         meteor.setCores(cores);
         meteor.setBig(big);
+        meteor.setMedium(medium);
         meteor.setDrift(driftX, driftZ);
         meteor.setColor(RainbowLightning.randomColor(random));
         level.addFreshEntity(meteor);
+
+        // 大流星：提前通知词条（落点坐标），用来做落地前的场
+        if (big)
+        {
+            for (SwordCore core : cores)
+            {
+                core.onBigMeteorIncoming(level, x, groundY, z, player);
+            }
+        }
+    }
+
+    @Override
+    public boolean shouldRenderAtSqrDistance(double distanceSqr)
+    {
+        // 本体只有 0.5 格，默认可视距离按碰撞箱算是 32 格——流星从 50 格高砸下来，
+        // 离远了光效会整个消失，这里放大到 160 格
+        return distanceSqr < 160.0D * 160.0D;
+    }
+
+    @Override
+    public AABB getBoundingBoxForCulling()
+    {
+        // 光效比本体大得多，剔除盒要按光效算，否则屏幕边缘会提前被剔掉
+        return super.getBoundingBoxForCulling().inflate(4.5D);
     }
 
     @Override

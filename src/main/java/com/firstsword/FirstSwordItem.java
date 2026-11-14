@@ -66,6 +66,46 @@ public class FirstSwordItem extends SwordItem
         return Math.max(METEOR_COOLDOWN_MIN, ticks);
     }
 
+    /** 这把剑的彩虹雷落点半径（含词条加成） */
+    public static double lightningRadius(ItemStack stack)
+    {
+        float radius = (float) STRIKE_RADIUS;
+
+        for (SwordCore core : SwordCores.on(stack))
+        {
+            radius = core.lightningRadius(radius);
+        }
+
+        return radius;
+    }
+
+    /** 这把剑的彩虹雷是否无视地形（任一词条打开就生效） */
+    public static boolean lightningThroughBlocks(ItemStack stack)
+    {
+        for (SwordCore core : SwordCores.on(stack))
+        {
+            if (core.lightningThroughBlocks())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** 这把剑的瞬闪斩最多能存几次（含词条加成），至少 1 次 */
+    public static int blinkCharges(ItemStack stack)
+    {
+        int charges = 1;
+
+        for (SwordCore core : SwordCores.on(stack))
+        {
+            charges = core.blinkCharges(charges);
+        }
+
+        return Math.max(1, charges);
+    }
+
     /** 这把剑的瞬闪斩伤害（含词条加成），路径和落点分别传入各自的基数 */
     public static float blinkDamage(ItemStack stack, float base)
     {
@@ -91,8 +131,8 @@ public class FirstSwordItem extends SwordItem
 
         if (level instanceof ServerLevel serverLevel)
         {
-            RainbowLightning.summon(serverLevel, player, WAVE_COUNT, BOLTS_PER_WAVE, STRIKE_RADIUS,
-                    lightningDamage(stack));
+            RainbowLightning.summon(serverLevel, player, WAVE_COUNT, BOLTS_PER_WAVE,
+                    lightningRadius(stack), lightningDamage(stack), lightningThroughBlocks(stack));
             player.getCooldowns().addCooldown(this, COOLDOWN_TICKS);
 
             level.playSound(null, player.getX(), player.getY(), player.getZ(),

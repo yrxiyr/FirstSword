@@ -71,6 +71,11 @@ public class MeteorKeyHandler
                         (charge - MIN_CHARGE) / (float) (MAX_CHARGE - MIN_CHARGE), 0.0F, 1.0F);
                 PacketDistributor.sendToServer(new MeteorCastPayload(power));
             }
+            else
+            {
+                // 点按：没有任何蓄力。发个负数告诉服务端，让词条自己决定要不要接管
+                PacketDistributor.sendToServer(new MeteorCastPayload(-1.0F));
+            }
 
             charge = 0;
         }

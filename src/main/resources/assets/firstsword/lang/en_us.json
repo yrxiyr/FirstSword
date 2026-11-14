@@ -1,5 +1,5 @@
 {
-  "itemGroup.firstsword": "The FirstMod",
+  "itemGroup.firstsword": "First Sword",
   "item.firstsword.first_sword": "First Sword",
   "tooltip.firstsword.first_sword.rainbow": "Right-click: summon rainbow lightning around you",
   "tooltip.firstsword.first_sword.meteor": "Hold J: call down a meteor shower",
@@ -8,6 +8,7 @@
   "key.firstsword.meteor": "Meteor Shower",
   "key.firstsword.blink": "Blink Strike",
   "message.firstsword.blink_cooldown": "Blink Strike cooling down: %s s",
+  "message.firstsword.blink_charges": "Blink Strike charges: %s/%s",
   "message.firstsword.need_sword": "You must hold the First Sword",
   "key.categories.firstsword": "The FirstMod"
 }

@@ -69,6 +69,16 @@ public class RainbowLightning extends Entity
     private static final EntityDataAccessor<Integer> DATA_COLOR =
             SynchedEntityData.defineId(RainbowLightning.class, EntityDataSerializers.INT);
 
+    /** 横放方向；两个都是 0 表示普通竖直落雷 */
+    private static final EntityDataAccessor<Float> DATA_DIR_X =
+            SynchedEntityData.defineId(RainbowLightning.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_DIR_Z =
+            SynchedEntityData.defineId(RainbowLightning.class, EntityDataSerializers.FLOAT);
+
+    /** 是否向下也镜像一份（森罗核心穿墙时用） */
+    private static final EntityDataAccessor<Boolean> DATA_DOWNWARD =
+            SynchedEntityData.defineId(RainbowLightning.class, EntityDataSerializers.BOOLEAN);
+
     /** 渲染用的随机种子；客户端要读，所以是 public（和原版 LightningBolt 一致） */
     public long seed;
 
@@ -88,6 +98,12 @@ public class RainbowLightning extends Entity
     /** 一发之内共用，保证同一个目标最多吃一次伤害 */
     private Set<Entity> damaged;
 
+    /** 无视地形，直接在当前高度生成（森罗核心） */
+    private boolean throughBlocks;
+
+    /** 根顶生成时用的高度，补落也用它 */
+    private double spawnY;
+
     public RainbowLightning(EntityType<? extends RainbowLightning> entityType, Level level)
     {
         super(entityType, level);
@@ -100,6 +116,34 @@ public class RainbowLightning extends Entity
         this.entityData.set(DATA_COLOR, rgb);
     }
 
+    /** 把这道雷横过来，沿 (dirX, dirZ) 方向躺平；不调用就是普通竖直落雷 */
+    public void setHorizontal(float dirX, float dirZ)
+    {
+        this.entityData.set(DATA_DIR_X, dirX);
+        this.entityData.set(DATA_DIR_Z, dirZ);
+    }
+
+    public float dirX()
+    {
+        return this.entityData.get(DATA_DIR_X);
+    }
+
+    public float dirZ()
+    {
+        return this.entityData.get(DATA_DIR_Z);
+    }
+
+    /** 向下也镜像一份：光柱上下贯穿 */
+    public void setDownward(boolean downward)
+    {
+        this.entityData.set(DATA_DOWNWARD, downward);
+    }
+
+    public boolean downward()
+    {
+        return this.entityData.get(DATA_DOWNWARD);
+    }
+
     /** 0xRRGGBB */
     public int getColor()
     {
@@ -110,6 +154,9 @@ public class RainbowLightning extends Entity
     protected void defineSynchedData(SynchedEntityData.Builder builder)
     {
         builder.define(DATA_COLOR, 0xFFFFFF);
+        builder.define(DATA_DIR_X, 0.0F);
+        builder.define(DATA_DIR_Z, 0.0F);
+        builder.define(DATA_DOWNWARD, false);
     }
 
     @Override
@@ -145,6 +192,16 @@ public class RainbowLightning extends Entity
     public static void summon(ServerLevel level, Player player, int waves, int boltsPerWave, double radius,
                               float damage)
     {
+        summon(level, player, waves, boltsPerWave, radius, damage, false);
+    }
+
+    /**
+     * 【throughBlocks】为 true 时，落雷不再贴地表生成，而是直接落在玩家当前高度——
+     * 下界（地表高度是基岩顶）、洞穴、室内都能正常落雷，看起来就是穿过了方块。
+     */
+    public static void summon(ServerLevel level, Player player, int waves, int boltsPerWave, double radius,
+                              float damage, boolean throughBlocks)
+    {
         RandomSource random = level.random;
         Set<Entity> damaged = new HashSet<>();
 
@@ -157,9 +214,18 @@ public class RainbowLightning extends Entity
             double x = player.getX() + Math.cos(angle) * distance;
             double z = player.getZ() + Math.sin(angle) * distance;
 
-            RainbowLightning bolt = create(level, random, x, z);
+            RainbowLightning bolt = throughBlocks
+                    ? create(level, random, x, z, player.getY())
+                    : create(level, random, x, z);
             // 每一道各自负责自己后续的补落，所以三波是 16 条链并行推进
             bolt.followUps = waves - 1;
+            bolt.throughBlocks = throughBlocks;
+            bolt.spawnY = player.getY();
+
+            if (throughBlocks)
+            {
+                bolt.setDownward(true);
+            }
             bolt.damage = damage;
             bolt.anchorX = player.getX();
             bolt.anchorZ = player.getZ();
@@ -168,6 +234,88 @@ public class RainbowLightning extends Entity
             bolt.damaged = damaged;
             level.addFreshEntity(bolt);
         }
+    }
+
+    /**
+     * 以玩家为中心，在 [{@code minRadius}, {@code maxRadius}] 的环带里随机落下若干道雷。
+     *
+     * 和 {@link #summon} 的区别是内圈可以留空：用来做「身周炸开一圈」这类效果，
+     * 不会在玩家脚下也劈一道。{@code damaged} 由调用方持有，多批共用一份去重集合。
+     */
+    public static void summonBurst(ServerLevel level, Player player, int bolts,
+                                   double minRadius, double maxRadius, float damage,
+                                   Set<Entity> damaged)
+    {
+        RandomSource random = level.random;
+
+        for (int i = 0; i < bolts; i++)
+        {
+            double angle = random.nextDouble() * Math.PI * 2.0D;
+            double distance = minRadius + random.nextDouble() * (maxRadius - minRadius);
+            double x = player.getX() + Math.cos(angle) * distance;
+            double z = player.getZ() + Math.sin(angle) * distance;
+
+            RainbowLightning bolt = create(level, random, x, z);
+            bolt.followUps = 0;
+            bolt.damage = damage;
+            bolt.anchorX = player.getX();
+            bolt.anchorZ = player.getZ();
+            bolt.anchorRadius = maxRadius;
+            bolt.ownerUuid = player.getUUID();
+            bolt.damaged = damaged;
+            level.addFreshEntity(bolt);
+        }
+    }
+
+    /**
+     * 横着炸开一圈：在 [{ minRadius}, { maxRadius}] 的环带里随机落若干道**横向**的雷，
+     * 方向朝外。和竖直落雷是同一个实体，只是渲染时主轴换成了水平方向。
+     */
+    public static void summonHorizontalBurst(ServerLevel level, Player player, int bolts,
+                                             double minRadius, double maxRadius, float damage,
+                                             Set<Entity> damaged)
+    {
+        RandomSource random = level.random;
+
+        for (int i = 0; i < bolts; i++)
+        {
+            double angle = random.nextDouble() * Math.PI * 2.0D;
+            double distance = minRadius + random.nextDouble() * (maxRadius - minRadius);
+            double x = player.getX() + Math.cos(angle) * distance;
+            double z = player.getZ() + Math.sin(angle) * distance;
+
+            RainbowLightning bolt = create(level, random, x, z);
+            bolt.setHorizontal((float) Math.cos(angle), (float) Math.sin(angle));
+            bolt.followUps = 0;
+            bolt.damage = damage;
+            bolt.anchorX = player.getX();
+            bolt.anchorZ = player.getZ();
+            bolt.anchorRadius = maxRadius;
+            bolt.ownerUuid = player.getUUID();
+            bolt.damaged = damaged;
+            level.addFreshEntity(bolt);
+        }
+    }
+
+    /**
+     * 在指定位置放一道横向彩雷。位置和朝向由调用方决定（比如铺满一个长方体）。
+     */
+    public static void spawnHorizontalBolt(ServerLevel level, Player owner,
+                                           double x, double y, double z,
+                                           float dirX, float dirZ,
+                                           float damage, Set<Entity> damaged)
+    {
+        RainbowLightning bolt = create(level, level.random, x, z);
+        bolt.setPos(x, y, z);
+        bolt.setHorizontal(dirX, dirZ);
+        bolt.followUps = 0;
+        bolt.damage = damage;
+        bolt.anchorX = x;
+        bolt.anchorZ = z;
+        bolt.anchorRadius = 0.0D;
+        bolt.ownerUuid = owner.getUUID();
+        bolt.damaged = damaged;
+        level.addFreshEntity(bolt);
     }
 
     /** 从色板里随机取一个颜色 */
@@ -191,6 +339,15 @@ public class RainbowLightning extends Entity
         b += (int) ((255 - b) * amount);
 
         return (r << 16) | (g << 8) | b;
+    }
+
+    private static RainbowLightning create(ServerLevel level, RandomSource random, double x, double z, double y)
+    {
+        RainbowLightning bolt = new RainbowLightning(FirstSword.RAINBOW_LIGHTNING.get(), level);
+        bolt.setPos(x, y, z);
+        bolt.seed = random.nextLong();
+        bolt.setColor(PALETTE[random.nextInt(PALETTE.length)]);
+        return bolt;
     }
 
     private static RainbowLightning create(ServerLevel level, RandomSource random, double x, double z)
@@ -218,7 +375,12 @@ public class RainbowLightning extends Entity
         double x = this.anchorX + Math.cos(angle) * distance;
         double z = this.anchorZ + Math.sin(angle) * distance;
 
-        RainbowLightning next = create(serverLevel, random, x, z);
+        RainbowLightning next = this.throughBlocks
+                ? create(serverLevel, random, x, z, this.spawnY)
+                : create(serverLevel, random, x, z);
+        next.throughBlocks = this.throughBlocks;
+        next.spawnY = this.spawnY;
+        next.setDownward(this.downward());
         next.followUps = this.followUps - 1;
         next.damage = this.damage;
         next.anchorX = this.anchorX;
@@ -250,9 +412,13 @@ public class RainbowLightning extends Entity
             this.damaged = new HashSet<>();
         }
 
+        // 穿墙模式的光柱上下贯穿，判定也跟着拉高
+        double down = this.throughBlocks ? 15.0D : 2.0D;
+        double up = this.throughBlocks ? 10.0D : 6.0D;
+
         AABB area = new AABB(
-                this.getX() - DAMAGE_RADIUS, this.getY() - 2.0D, this.getZ() - DAMAGE_RADIUS,
-                this.getX() + DAMAGE_RADIUS, this.getY() + 6.0D, this.getZ() + DAMAGE_RADIUS);
+                this.getX() - DAMAGE_RADIUS, this.getY() - down, this.getZ() - DAMAGE_RADIUS,
+                this.getX() + DAMAGE_RADIUS, this.getY() + up, this.getZ() + DAMAGE_RADIUS);
 
         for (LivingEntity target : serverLevel.getEntitiesOfClass(LivingEntity.class, area))
         {

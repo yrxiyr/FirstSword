@@ -48,7 +48,8 @@ public class ModNetwork
                 return;
             }
 
-            int remaining = BlinkStrike.getRemainingCooldown(player, player.serverLevel().getGameTime());
+            int max = FirstSwordItem.blinkCharges(sword);
+            int remaining = BlinkStrike.getRemainingCooldown(player, player.serverLevel().getGameTime(), max);
 
             if (remaining > 0)
             {
@@ -59,7 +60,14 @@ public class ModNetwork
                 return;
             }
 
-            BlinkStrike.cast(player.serverLevel(), player, sword);
+            if (BlinkStrike.cast(player.serverLevel(), player, sword) && max > 1)
+            {
+                // 多层充能时补一个剩余次数提示
+                player.displayClientMessage(Component.translatable(
+                        "message.firstsword.blink_charges",
+                        BlinkStrike.getCharges(player, max, player.serverLevel().getGameTime()),
+                        max), true);
+            }
         });
     }
 
@@ -80,7 +88,27 @@ public class ModNetwork
                     : off.getItem() instanceof FirstSwordItem ? off
                     : ItemStack.EMPTY;
 
-            if (sword.isEmpty() || player.getCooldowns().isOnCooldown(sword.getItem()))
+            if (sword.isEmpty())
+            {
+                return;
+            }
+
+            if (payload.power() < 0.0F)
+            {
+                // 点按：没有一点蓄力。交给词条接管（破袭核心会在这里给 buff），
+                // 没有词条接住就当作没按到，不召唤流星也不进冷却
+                for (SwordCore core : SwordCores.on(sword))
+                {
+                    if (core.onMeteorTap(player.serverLevel(), player, sword))
+                    {
+                        break;
+                    }
+                }
+
+                return;
+            }
+
+            if (player.getCooldowns().isOnCooldown(sword.getItem()))
             {
                 return;
             }
